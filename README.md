@@ -15,32 +15,8 @@ This is a reimplementation of MARLIN using PyTorch instead of TensorFlow/Keras, 
 pip install torch numpy pandas scikit-learn tensorboard
 pip install torch --index-url https://download.pytorch.org/whl/cu118
 ```
-
 ## Quick Start
 
-This creates a reference CSV with columns: `sample_id`, `original_label`, `merged_label`, `class_id`, `pb_merged`
-
-#### Option B: Convert BED Files
-
-If you have BED files from nanopore sequencing:
-
-```bash
-# Extract reference features from reference BED file
-python convert_data.py \
-    --mode extract_features \
-    --input /path/to/marlin_v1.probes_hg38.bed.gz \
-    --output reference_features.txt
-
-# Convert multiple BED files to training matrix
-python convert_data.py \
-    --mode beds_to_matrix \
-    --input "data/*.bed" \
-    --output training_data.csv \
-    --labels sample_labels.csv \
-    --reference_features reference_features.txt
-```
-
-**Note:** `sample_labels.csv` should have columns: `sample_id,label`
 
 ### 2. Train the Model
 
