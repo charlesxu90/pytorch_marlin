@@ -12,37 +12,33 @@ This is a reimplementation of MARLIN using PyTorch instead of TensorFlow/Keras, 
 ### Requirements
 
 ```bash
+pip install -r requirements.txt
+
 pip install torch numpy pandas scikit-learn tensorboard
 pip install torch --index-url https://download.pytorch.org/whl/cu118
+
+# For HDF5 support
+pip install h5py
 ```
 ## Quick Start
 
+### 1. Convert *.Rdata to *.h5 format
+```bash
+# Convert Rdata to csv
+Rscript convert_rdata_to_csv.R marlin_to_csv \
+      ../MARLIN/betas.RData \
+      ../MARLIN/y.RData \
+      training_data.csv
+
+# Convert csv to h5 format
+python csv_to_h5_fast.py training_data.csv training_data.h5
+```
 
 ### 2. Train the Model
 
 ```bash
-python train.py \
-    --train_csv training_data.csv \
-    --output_dir ./output \
-    --reference_features reference_features.txt \
-    --epochs 3000 \
-    --batch_size 32 \
-    --learning_rate 1e-5 \
-    --device cuda
+python src/train_exact.py --train_file data/training_data.h5
 ```
-
-**Training Options:**
-- `--train_csv`: Path to training data CSV
-- `--output_dir`: Directory to save model and logs
-- `--reference_features`: Path to reference features file (optional)
-- `--epochs`: Number of training epochs (default: 3000)
-- `--batch_size`: Batch size (default: 32)
-- `--learning_rate`: Learning rate (default: 1e-5)
-- `--samples_per_class`: Samples per class after upsampling (default: 50)
-- `--no_upsample`: Disable class upsampling
-- `--early_stopping_patience`: Patience for early stopping (default: 100)
-- `--device`: Device to train on (cuda/cpu)
-- `--seed`: Random seed for reproducibility (default: 42)
 
 ### 3. Make Predictions
 
@@ -57,54 +53,6 @@ python predict.py \
     --device cuda
 ```
 
-**Prediction Options:**
-- `--model_path`: Path to trained model (.pt file)
-- `--input_csv`: Path to input data CSV
-- `--output_csv`: Path to save predictions
-- `--reference_features`: Path to reference features file (optional)
-- `--class_mapping`: Path to class mapping CSV (optional)
-- `--batch_size`: Batch size for prediction (default: 32)
-- `--no_probabilities`: Don't include full probability distribution in output
-- `--device`: Device to use (cuda/cpu)
-
-## Data Format
-
-### Training Data CSV Format
-
-The training CSV should have the following structure:
-
-```csv
-label,cg00000029,cg00000165,cg00000236,...
-AML_t_PML-RARA,0.123,0.456,0.789,...
-AML_t_RUNX1-RUNX1T1,0.234,0.567,0.890,...
-ALL_B_PBXI,0.345,0.678,0.901,...
-...
-```
-
-- **First column (`label`):** Class label for each sample
-- **Remaining columns:** Methylation beta values (0-1) for each CpG site
-- **Column names:** Should match CpG probe IDs
-
-### Input Data for Prediction
-
-For prediction, the CSV format is similar but the `label` column is optional:
-
-```csv
-sample_id,cg00000029,cg00000165,cg00000236,...
-sample_001,0.123,0.456,0.789,...
-sample_002,0.234,0.567,0.890,...
-```
-
-### Reference Features File
-
-A simple text file with one feature (CpG probe ID) per line:
-
-```
-cg00000029
-cg00000165
-cg00000236
-...
-```
 
 ## Output Files
 
