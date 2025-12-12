@@ -73,6 +73,7 @@ Thumbs.db
 temp/
 tmp/
 output/
+output_*/
 data/
 .vscode/
 .claude/
