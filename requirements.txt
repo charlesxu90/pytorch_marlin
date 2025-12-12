@@ -12,3 +12,5 @@ h5py>=3.8.0  # For fast HDF5 data loading
 tensorboard>=2.13.0
 matplotlib>=3.7.0
 tqdm>=4.65.0  # For progress bars in data conversion
+
+ipykernel # For Jupyter notebook support

@@ -1,5 +1,4 @@
-"""
-MARLIN Prediction Script
+"""MARLIN Prediction Script
 Make predictions on new methylation data using trained MARLIN model
 """
 
@@ -9,10 +8,27 @@ import time
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 from model import MARLINModel
-from data_utils import load_csv_data, load_reference_features, MARLINDataset
+from data_utils_fast import load_training_data
+
+
+class MARLINDataset(Dataset):
+    """PyTorch Dataset for MARLIN."""
+    def __init__(self, data, labels=None):
+        self.data = torch.FloatTensor(data)
+        if labels is not None:
+            self.labels = torch.LongTensor(labels)
+        else:
+            self.labels = torch.zeros(len(data), dtype=torch.long)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.labels[idx]
 
 
 def predict_batch(
@@ -50,52 +66,77 @@ def predict_batch(
     model = MARLINModel.load_model(model_path, device=device)
     model.eval()
 
-    # Load reference features if provided
-    feature_columns = None
-    if reference_features:
-        feature_columns = load_reference_features(reference_features)
-
-    # Load input data (no labels required for prediction)
+    # Load input data using data_utils_fast
     print(f"Loading input data from {input_csv}...")
-    df = pd.read_csv(input_csv)
-
-    # Check if labels are present
-    has_labels = 'label' in df.columns
-    if has_labels:
-        sample_ids = df.index.tolist()
-        labels_df = df[['label']]
-        feature_df = df.drop(columns=['label'])
+    
+    # Determine if file is HDF5 or CSV
+    file_ext = os.path.splitext(input_csv)[1].lower()
+    
+    has_labels = False
+    sample_ids = None
+    labels_array = None
+    
+    if file_ext in ['.h5', '.hdf5']:
+        # Load from HDF5 using data_utils_fast
+        try:
+            data, labels_array, feature_names = load_training_data(
+                input_csv,
+                format='hdf5',
+                binarize=True
+            )
+            has_labels = True
+            sample_ids = [f"sample_{i}" for i in range(len(data))]
+        except Exception as e:
+            # Try without labels
+            print(f"Warning: Could not load labels: {e}")
+            data, _, feature_names = load_training_data(
+                input_csv,
+                format='hdf5',
+                binarize=True
+            )
+            sample_ids = [f"sample_{i}" for i in range(len(data))]
     else:
-        sample_ids = df.index.tolist()
-        feature_df = df
-
-    # Check for sample ID column
-    if 'sample_id' in feature_df.columns:
-        sample_ids = feature_df['sample_id'].tolist()
-        feature_df = feature_df.drop(columns=['sample_id'])
-
-    # Select features if reference provided
-    if feature_columns is not None:
-        missing_cols = set(feature_columns) - set(feature_df.columns)
-        if missing_cols:
-            print(f"Warning: {len(missing_cols)} reference features not found in input")
-        available_cols = [col for col in feature_columns if col in feature_df.columns]
-        feature_df = feature_df[available_cols]
-
-    # Convert to numpy and handle missing values
-    data = feature_df.values
-    data = np.nan_to_num(data, nan=0.0)
-
-    # Binarize
-    print("Binarizing methylation values...")
-    data = np.where(data >= 0.5, 1, -1).astype(np.float32)
+        # Load from CSV
+        df = pd.read_csv(input_csv)
+        
+        # Check if labels are present
+        if 'label' in df.columns:
+            has_labels = True
+            labels_array = df['label'].values
+            feature_df = df.drop(columns=['label'])
+        else:
+            feature_df = df
+        
+        # Check for sample ID column
+        if 'sample_id' in feature_df.columns:
+            sample_ids = feature_df['sample_id'].tolist()
+            feature_df = feature_df.drop(columns=['sample_id'])
+        else:
+            sample_ids = [f"sample_{i}" for i in range(len(feature_df))]
+        
+        # Convert to numpy and handle missing values
+        data = feature_df.values
+        data = np.nan_to_num(data, nan=0.0)
+        
+        # Binarize (convert [0,1] to [-1,1])
+        print("Binarizing methylation values...")
+        data = np.where(data >= 0.5, 1, -1).astype(np.float32)
 
     print(f"Input data shape: {data.shape}")
 
     # Create dataset and loader
-    # Use dummy labels for DataLoader (not used in prediction)
-    dummy_labels = np.zeros(len(data), dtype=np.int64)
-    dataset = MARLINDataset(data, dummy_labels)
+    if has_labels and labels_array is not None:
+        # Convert string labels to integers if needed
+        if labels_array.dtype == object or labels_array.dtype.kind in ['U', 'S']:
+            if labels_array.dtype.kind == 'S':
+                labels_array = labels_array.astype(str)
+            unique_labels = sorted(set(labels_array))
+            label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
+            labels_array = np.array([label_to_idx[label] for label in labels_array], dtype=np.int64)
+        dataset = MARLINDataset(data, labels_array)
+    else:
+        dataset = MARLINDataset(data, labels=None)
+    
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     # Make predictions
@@ -144,8 +185,8 @@ def predict_batch(
         ]
 
     # Add true labels if available
-    if has_labels:
-        results['true_label'] = labels_df['label'].values
+    if has_labels and labels_array is not None:
+        results['true_label'] = labels_array
 
     # Add probabilities if requested
     if return_probabilities:
@@ -164,27 +205,55 @@ def predict_batch(
     results.to_csv(output_csv, index=False)
     print(f"Predictions saved to {output_csv}")
 
-    # Calculate accuracy if labels available
-    if has_labels:
-        # Try to match labels to predictions
-        if class_names:
-            # Convert true labels to indices
-            label_to_idx = {name: idx for idx, name in enumerate(class_names)}
-            true_indices = [
-                label_to_idx.get(label, -1)
-                for label in labels_df['label'].values
-            ]
-            valid_mask = np.array(true_indices) >= 0
-            if valid_mask.sum() > 0:
-                accuracy = np.mean(
-                    np.array(all_predictions)[valid_mask] == np.array(true_indices)[valid_mask]
-                )
-                print(f"Accuracy: {accuracy*100:.2f}% ({valid_mask.sum()}/{len(valid_mask)} samples)")
+    # Calculate performance metrics if labels available
+    if has_labels and labels_array is not None:
+        print("\n" + "="*70)
+        print("PERFORMANCE METRICS")
+        print("="*70)
+        
+        # Convert labels to integers if they're strings
+        true_labels = labels_array
+        if true_labels.dtype == object or true_labels.dtype.kind in ['U', 'S']:
+            if true_labels.dtype.kind == 'S':
+                true_labels = true_labels.astype(str)
+            unique_labels = sorted(set(true_labels))
+            label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
+            true_labels = np.array([label_to_idx.get(label, -1) for label in true_labels], dtype=np.int64)
+        
+        # Only evaluate on valid samples
+        valid_mask = true_labels >= 0
+        valid_true = true_labels[valid_mask]
+        valid_pred = np.array(all_predictions)[valid_mask]
+        
+        if len(valid_true) > 0:
+            # Calculate metrics
+            accuracy = accuracy_score(valid_true, valid_pred)
+            precision = precision_score(valid_true, valid_pred, average='weighted', zero_division=0)
+            recall = recall_score(valid_true, valid_pred, average='weighted', zero_division=0)
+            f1 = f1_score(valid_true, valid_pred, average='weighted', zero_division=0)
+            
+            print(f"Samples evaluated: {len(valid_true)}/{len(valid_pred)}")
+            print(f"Accuracy:  {accuracy:.4f} ({accuracy*100:.2f}%)")
+            print(f"Precision: {precision:.4f}")
+            print(f"Recall:    {recall:.4f}")
+            print(f"F1-Score:  {f1:.4f}")
+            
+            # Per-class metrics
+            print("\nPer-class metrics:")
+            unique_classes = np.unique(valid_true)
+            for cls in sorted(unique_classes):
+                cls_mask = valid_true == cls
+                cls_accuracy = (valid_pred[cls_mask] == cls).mean()
+                n_samples = cls_mask.sum()
+                class_name = class_names[cls] if class_names and cls < len(class_names) else f"Class_{cls}"
+                print(f"  {class_name}: {cls_accuracy:.4f} ({n_samples} samples)")
+        else:
+            print("Warning: No valid labels found for evaluation")
 
     # Print prediction summary
     print("\nPrediction Summary:")
     if class_names:
-        pred_counts = pd.Series([class_names[p] for p in all_predictions]).value_counts()
+        pred_counts = pd.Series([class_names[p] if p < len(class_names) else f'Class_{p}' for p in all_predictions]).value_counts()
     else:
         pred_counts = pd.Series(all_predictions).value_counts()
     print(pred_counts.head(10))
@@ -207,7 +276,7 @@ def predict_single(
     Args:
         model_path (str): Path to trained model file (.pt)
         input_csv (str): Path to input data CSV file (single sample)
-        reference_features (str, optional): Path to reference features file
+        reference_features (str, optional): Path to reference features file (not used with fast loader)
         class_mapping (str, optional): Path to class mapping CSV file
         device (str): Device to use ('cuda' or 'cpu'). Default: 'cuda'
 
@@ -220,18 +289,33 @@ def predict_single(
     model = MARLINModel.load_model(model_path, device=device)
     model.eval()
 
-    # Load reference features if provided
-    feature_columns = None
-    if reference_features:
-        feature_columns = load_reference_features(reference_features)
-
     # Load data
-    data, _, _ = load_csv_data(
-        input_csv,
-        feature_columns=feature_columns,
-        label_column=None if 'label' not in pd.read_csv(input_csv).columns else 'label',
-        binarize=True
-    )
+    file_ext = os.path.splitext(input_csv)[1].lower()
+    
+    if file_ext in ['.h5', '.hdf5']:
+        # Load from HDF5
+        data, _, _ = load_training_data(
+            input_csv,
+            format='hdf5',
+            binarize=True
+        )
+    else:
+        # Load from CSV
+        df = pd.read_csv(input_csv)
+        
+        # Remove label column if present
+        if 'label' in df.columns:
+            df = df.drop(columns=['label'])
+        
+        # Remove sample_id column if present
+        if 'sample_id' in df.columns:
+            df = df.drop(columns=['sample_id'])
+        
+        data = df.values
+        data = np.nan_to_num(data, nan=0.0)
+        
+        # Binarize
+        data = np.where(data >= 0.5, 1, -1).astype(np.float32)
 
     if len(data) != 1:
         raise ValueError(f"Expected single sample, got {len(data)} samples")
