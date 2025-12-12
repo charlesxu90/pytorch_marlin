@@ -37,20 +37,21 @@ python csv_to_h5_fast.py training_data.csv training_data.h5
 ### 2. Train the Model
 
 ```bash
-python src/train_exact.py --train_file data/training_data.h5
+# sample data
+python src/train_exact.py --train_file  ../EpiAML/data/training_data_debug.h5 --output_dir output_sample
+
+# full data
+python src/train_exact.py --train_file data/training_data.h5 --output_dir output
 ```
 
 ### 3. Make Predictions
 
 ```bash
-python predict.py \
-    --model_path ./output/best_model.pt \
-    --input_csv test_data.csv \
-    --output_csv predictions.csv \
-    --reference_features reference_features.txt \
-    --class_mapping ./output/class_mapping.csv \
-    --batch_size 32 \
-    --device cuda
+# sample data
+python src/predict.py --model_path output_sample/marlin_model.pt --input_csv  ../EpiAML/data/training_data_debug.h5 --output_csv ../EpiAML/data/training_data_debug_pred.csv
+
+# full data
+python src/predict.py --model_path output/marlin_model.pt --input_csv  data/training_data.h5 --output_csv data/training_data_pred.csv
 ```
 
 

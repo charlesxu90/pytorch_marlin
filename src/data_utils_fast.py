@@ -135,6 +135,21 @@ def save_data_npz(data, labels, feature_names, output_file, compressed=True):
     print(f"Saved successfully!")
 
 
+def binarize_methylation(beta_values, threshold=0.5):
+    """
+    Binarize methylation beta values to +1/-1.
+
+    Args:
+        beta_values (np.ndarray): Beta values in range [0, 1]
+        threshold (float): Threshold for binarization. Default: 0.5
+
+    Returns:
+        np.ndarray: Binarized values (+1 for methylated, -1 for unmethylated)
+    """
+    binarized = np.where(beta_values >= threshold, 1, -1)
+    return binarized.astype(np.float32)
+
+
 def load_training_data(
     data_path,
     format='auto',
@@ -192,7 +207,6 @@ def load_training_data(
 
     # Binarize if needed
     if binarize and format in ['hdf5', 'npz']:
-        from data_utils import binarize_methylation
         print("Binarizing methylation values...")
         data = binarize_methylation(data, threshold=threshold)
 
