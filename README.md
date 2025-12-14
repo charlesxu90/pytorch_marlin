@@ -38,10 +38,14 @@ python csv_to_h5_fast.py training_data.csv training_data.h5
 
 ```bash
 # sample data
-python src/train_exact.py --train_file  ../EpiAML/data/training_data_debug.h5 --output_dir output_sample
+python src/train_exact.py --train_file  data/sample_data/training_data_debug.h5 --output_dir results/sample_data
 
 # full data
-python src/train_exact.py --train_file data/training_data.h5 --output_dir output
+python src/train_exact.py --train_file data/array_data/training_data.h5 --output_dir results/array_data
+
+# selected data
+python src/train_exact.py --train_file data/feature_selection_shap/training_data_top1000.h5 --output_dir data/feature_selection_shap/training_data_top1000.h5-result --dropout_rate 0.5
+
 ```
 
 ### 3. Make Predictions

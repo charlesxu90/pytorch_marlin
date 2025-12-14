@@ -119,6 +119,7 @@ def train_marlin_exact(
     learning_rate=1e-5,
     samples_per_class=50,
     flip_percent=0.1,
+    dropout_rate=0.99,
     device='cuda',
     random_seed=100
 ):
@@ -133,6 +134,7 @@ def train_marlin_exact(
         learning_rate (float): Learning rate (default: 1e-5)
         samples_per_class (int): Samples per class for upsampling (default: 50)
         flip_percent (float): Percentage of CpGs to flip (default: 0.1)
+        dropout_rate (float): Dropout rate (default: 0.99 to match R)
         device (str): Device ('cuda' or 'cpu')
         random_seed (int): Random seed (default: 100 to match R)
     """
@@ -185,11 +187,11 @@ def train_marlin_exact(
     model = MARLINModel(
         input_size=input_size,
         output_size=output_size,
-        dropout_rate=0.99  # Matching R
+        dropout_rate=dropout_rate
     ).to(device)
 
     print(f"\nModel: {input_size} → 256 → 128 → {output_size}")
-    print(f"Dropout: 0.99")
+    print(f"Dropout: {dropout_rate}")
     print(f"Total parameters: {model.get_num_parameters():,}")
 
     # Loss and optimizer (matching R exactly)
@@ -305,6 +307,7 @@ def train_marlin_exact(
         'learning_rate': learning_rate,
         'samples_per_class': samples_per_class,
         'flip_percent': flip_percent,
+        'dropout_rate': dropout_rate,
         'input_size': input_size,
         'output_size': output_size,
         'final_loss': round(final_loss, 4),
@@ -360,6 +363,8 @@ Example:
                         help='Samples per class (default: 50)')
     parser.add_argument('--flip_percent', type=float, default=0.1,
                         help='Percentage of CpGs to flip (default: 0.1)')
+    parser.add_argument('--dropout_rate', type=float, default=0.99,
+                        help='Dropout rate (default: 0.99 to match R)')
     parser.add_argument('--device', default='cuda',
                         choices=['cuda', 'cpu'],
                         help='Device (default: cuda)')
@@ -376,6 +381,7 @@ Example:
         learning_rate=args.learning_rate,
         samples_per_class=args.samples_per_class,
         flip_percent=args.flip_percent,
+        dropout_rate=args.dropout_rate,
         device=args.device,
         random_seed=args.seed
     )
